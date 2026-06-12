@@ -70,7 +70,7 @@ class FraudCase(BaseModel):
     recommended_warning: str = ""
     confidence: float = 0.5
     raw_text_hash: str = ""
-    extraction_method: str = "rule"  # rule / llm
+    extraction_method: str = "rule"  # rule / llm / csv_labeled
 
     def embedding_text(self) -> str:
         """用于向量化的文本：聚合最有判别力的字段。"""

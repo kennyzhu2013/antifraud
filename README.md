@@ -20,6 +20,10 @@ python -m antifraud_agent.cli ingest-local data/sample_articles
 # 2. 检测一段通话转写文本
 python -m antifraud_agent.cli detect "我是公安局的，你涉嫌洗钱，要保密，把钱转到安全账户"
 
+# 2.5 导入人工标注的通话转写 CSV（content=转写文本, comment=人工审核的诈骗类型）
+python -m antifraud_agent.cli ingest-csv 标注数据.csv \
+    --content-col content --label-col comment --id-col data_id
+
 # 3. 启动 HTTP 服务
 uvicorn antifraud_agent.api:app --port 8000
 # POST /detect {"transcript": "..."}   通话风险检测
@@ -41,6 +45,13 @@ python -m antifraud_agent.cli crawl --seeds data/seed_sources.json
 | Risk Tagging | `antifraud_agent/knowledge.py` | 12 类诈骗类型知识库（关键词/风险信号/防范提示），抽取、打标、检测三处共用 |
 | 案例库 + 向量索引 | `antifraud_agent/store/db.py` | SQLite 存案例 JSON 与向量；MVP 用 numpy 余弦检索，可平滑替换 pgvector/Qdrant |
 | Call Detection Agent | `antifraud_agent/detection/` | 风险分 = 0.45×规则分 + 0.35×相似案例分 + 0.20×LLM 分；输出风险等级、命中信号、相似案例、研判理由、处置建议 |
+| 标注转写导入 | `antifraud_agent/csv_import.py` | 人工标注通话 CSV 入库：编码自动探测（UTF-8/GB18030）、乱码行检测跳过、标签映射到统一类型、left:/right: 说话人解析、骗子侧话术抽取、PII 脱敏、按内容哈希去重；人工标签置信度 0.9 |
+
+### 标注 CSV 的编码注意事项
+
+`ingest-csv` 会自动识别 UTF-8 与 GBK/GB18030，**不要**对 GBK 文件做 UTF-8 强转——
+强转产生的"锟斤拷"替换符是不可逆的，原文已丢失。直接提供原始编码的文件即可。
+工具会统计并跳过乱码行，在日志中给出提示。
 
 ## 接入 LLM / 更换 Embedding（可选）
 
