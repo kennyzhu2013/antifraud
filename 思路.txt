@@ -1,0 +1,210 @@
+可以实现成一个“合规爬取 + 信息抽取 + 案例入库 + 通话检测 RAG”的 agent。核心不是让 agent 随机上网乱爬，而是把流程拆成可控模块。
+
+1. 总体架构
+
+公开来源
+  ↓
+爬虫采集 Agent
+  ↓
+正文清洗 / 去重 / PII 脱敏
+  ↓
+诈骗案例信息抽取 Agent
+  ↓
+结构化案例库
+  ↓
+向量索引 + 标签索引
+  ↓
+通话文本检测 Agent
+  ↓
+风险类型、相似案例、告警理由
+2. 数据来源建议
+优先使用合法、公开、稳定来源：
+
+公安、反诈中心、法院、检察院公开案例
+新闻媒体公开报道
+政务公众号文章
+银行、运营商、平台发布的反诈案例
+裁判文书或司法公开数据
+反诈宣传材料
+注意：
+
+遵守 robots.txt、网站条款和版权要求
+不采集私密数据
+尽量不要保存真实姓名、手机号、身份证号、银行卡号等敏感信息
+对案例中的个人信息做脱敏
+3. 案例库结构设计
+建议把每条诈骗案例抽成统一 schema。
+
+{
+  "case_id": "uuid",
+  "title": "冒充公检法诈骗案例",
+  "source_url": "https://...",
+  "source_name": "某地公安",
+  "publish_date": "2025-08-12",
+  "fraud_type": "冒充公检法",
+  "scenario": "来电称受害人涉嫌洗钱，要求转账到安全账户",
+  "victim_profile": {
+    "age_group": "中老年",
+    "occupation": "未知"
+  },
+  "fraud_script": [
+    "你的银行卡涉嫌洗钱",
+    "需要配合调查",
+    "不能告诉家人",
+    "转账到安全账户"
+  ],
+  "key_risk_signals": [
+    "冒充公安机关",
+    "制造恐慌",
+    "要求保密",
+    "诱导转账",
+    "提到安全账户"
+  ],
+  "money_flow": {
+    "payment_method": "银行转账",
+    "amount": 58000
+  },
+  "loss_amount": 58000,
+  "summary": "骗子冒充公安人员，称受害人涉嫌犯罪，诱导其转账。",
+  "recommended_warning": "公安机关不会通过电话要求转账至所谓安全账户。",
+  "confidence": 0.92,
+  "raw_text_hash": "..."
+}
+4. Agent 分工
+A. Source Discovery Agent
+负责发现可用来源。
+
+任务：
+
+搜索关键词：诈骗案例、反诈案例、冒充客服诈骗、刷单返利诈骗 等
+过滤低质量网页
+保存候选 URL
+B. Crawler Agent
+负责抓取网页内容。
+
+可用技术：
+
+requests + BeautifulSoup
+playwright 处理动态页面
+trafilatura / readability-lxml 提取正文
+定时任务：Airflow、Prefect、Celery、cron
+关键点：
+
+限速
+失败重试
+去重
+记录来源
+遵守 robots.txt
+C. Extraction Agent
+用 LLM 把非结构化文章转成结构化案例。
+
+Prompt 示例：
+
+你是反诈案例信息抽取助手。
+请从下面文章中提取诈骗案例信息，输出严格 JSON。
+如果字段缺失，填 null。
+不要编造信息。
+请识别诈骗类型、话术、风险信号、受害人特征、金额、转账方式、防范建议。
+文章：
+{{article_text}}
+D. Validation Agent
+负责校验 LLM 输出：
+
+JSON 是否合法
+金额、日期是否合理
+是否存在幻觉字段
+是否包含未脱敏个人信息
+是否与已有案例重复
+E. Risk Tagging Agent
+给案例打标签：
+
+冒充公检法
+冒充客服
+刷单返利
+投资理财
+虚假贷款
+杀猪盘
+裸聊敲诈
+中奖诈骗
+快递理赔
+AI 换脸 / 变声诈骗
+F. Call Detection Agent
+通话检测阶段输入可以是 ASR 转写文本。
+
+流程：
+
+实时通话语音
+  ↓
+ASR 转文本
+  ↓
+关键词 / 规则初筛
+  ↓
+向量检索相似案例
+  ↓
+LLM 或分类模型判断风险
+  ↓
+输出风险等级和解释
+输出示例：
+
+{
+  "risk_level": "high",
+  "fraud_type": "冒充公检法",
+  "matched_signals": [
+    "涉嫌洗钱",
+    "配合调查",
+    "不要告诉家人",
+    "安全账户"
+  ],
+  "similar_cases": ["case_001", "case_245"],
+  "reason": "通话中出现典型冒充公检法诈骗话术，并诱导用户保密和转账。",
+  "suggested_action": "立即提醒用户挂断电话，不要转账，并联系官方反诈热线核实。"
+}
+5. 技术选型
+后端
+Python
+FastAPI
+Celery / Dramatiq
+PostgreSQL
+Elasticsearch / OpenSearch
+Milvus / Qdrant / pgvector
+爬虫
+requests
+BeautifulSoup
+Playwright
+trafilatura
+newspaper3k
+LLM / NLP
+OpenAI / Claude / 本地大模型
+sentence-transformers
+BGE / E5 embedding
+规则引擎 + LLM 结合
+通话检测
+ASR：Whisper、FunASR、腾讯云、阿里云、讯飞
+实时检测：滑动窗口分析每 5-10 秒文本
+风险评分：规则分 + 模型分 + 相似案例分
+6. 最小可行版本 MVP
+可以先这样做：
+
+指定 20-50 个可信公开来源
+爬取网页标题、正文、发布时间、URL
+用 LLM 提取结构化 JSON
+入 PostgreSQL
+用 pgvector 建向量索引
+输入一段通话文本，检索相似案例
+输出诈骗类型、风险信号、相似案例和告警建议
+7. 风险控制
+一定要做这些：
+
+数据来源白名单
+原文留存 source_url，方便审计
+个人信息脱敏
+LLM 输出校验
+禁止编造案例
+案例更新记录
+人工抽检机制
+对外提示使用“风险提示”，避免直接给出法律定性
+如果你要工程化落地，我建议先做成三个服务：
+
+case-crawler：采集公开案例
+case-extractor：抽取、脱敏、入库
+call-risk-detector：根据通话文本做诈骗风险识别
