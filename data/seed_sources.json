@@ -1,0 +1,10 @@
+[
+  {
+    "url": "https://www.example-police.gov.cn/fanzha/case-001.html",
+    "source_name": "某市公安局反诈中心（示例，请替换为真实白名单 URL）"
+  },
+  {
+    "url": "https://www.example-news.com/anti-fraud/article-123.html",
+    "source_name": "某新闻媒体反诈专栏（示例，请替换为真实白名单 URL）"
+  }
+]
